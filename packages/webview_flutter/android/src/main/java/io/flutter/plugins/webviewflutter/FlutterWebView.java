@@ -4,14 +4,24 @@
 
 package io.flutter.plugins.webviewflutter;
 
+import android.app.Activity;
 import android.annotation.TargetApi;
+import android.content.ActivityNotFoundException;
 import android.content.Context;
+import android.content.Intent;
 import android.hardware.display.DisplayManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
+import android.util.Log;
 import android.view.View;
 import android.webkit.WebStorage;
+import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.WebChromeClient;
+import android.webkit.ValueCallback;
+import io.flutter.plugin.common.PluginRegistry;
+import io.flutter.plugin.common.PluginRegistry.Registrar;
 import io.flutter.plugin.common.BinaryMessenger;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
@@ -22,12 +32,17 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
-public class FlutterWebView implements PlatformView, MethodCallHandler {
+public class FlutterWebView implements PlatformView, MethodCallHandler, PluginRegistry.ActivityResultListener {
   private static final String JS_CHANNEL_NAMES_FIELD = "javascriptChannelNames";
   private final InputAwareWebView webView;
   private final MethodChannel methodChannel;
   private final FlutterWebViewClient flutterWebViewClient;
   private final Handler platformThreadHandler;
+  public ValueCallback<Uri[]> uploadMessage;
+  private ValueCallback<Uri> mUploadMessage;  
+  private final static int REQUEST_SELECT_FILE = 1;  
+
+  private static final String TAG = "FlutterWebView";
 
   @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
   @SuppressWarnings("unchecked")
@@ -36,11 +51,14 @@ public class FlutterWebView implements PlatformView, MethodCallHandler {
       BinaryMessenger messenger,
       int id,
       Map<String, Object> params,
-      final View containerView) {
+      final View containerView,
+      Registrar registrar
+  ) {
 
     DisplayListenerProxy displayListenerProxy = new DisplayListenerProxy();
     DisplayManager displayManager =
         (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
+    final Activity activity = registrar.activity();
     displayListenerProxy.onPreWebViewInitialization(displayManager);
     webView = new InputAwareWebView(context, containerView);
     displayListenerProxy.onPostWebViewInitialization(displayManager);
@@ -48,6 +66,33 @@ public class FlutterWebView implements PlatformView, MethodCallHandler {
     platformThreadHandler = new Handler(context.getMainLooper());
     // Allow local storage.
     webView.getSettings().setDomStorageEnabled(true);
+    webView.getSettings().setAllowContentAccess(true);
+    webView.getSettings().setAllowFileAccess(true);
+
+    webView.setWebChromeClient(new WebChromeClient() {  
+      // For Lollipop 5.0+ Devices
+      @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+      public boolean onShowFileChooser(WebView mWebView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
+          if (uploadMessage != null) {
+              uploadMessage.onReceiveValue(null);
+              uploadMessage = null;
+          }
+
+          uploadMessage = filePathCallback;
+
+          Intent intent = fileChooserParams.createIntent();
+          try {
+              activity.startActivityForResult(intent, REQUEST_SELECT_FILE);
+          } catch (ActivityNotFoundException e) {
+              uploadMessage = null;
+              Log.e(TAG, "Cannot open file chooser");
+              return false;
+          }
+          return true;
+      }
+    });  
+
+    registrar.addActivityResultListener(this);
 
     methodChannel = new MethodChannel(messenger, "plugins.flutter.io/webview_" + id);
     methodChannel.setMethodCallHandler(this);
@@ -66,8 +111,25 @@ public class FlutterWebView implements PlatformView, MethodCallHandler {
     }
     if (params.containsKey("initialUrl")) {
       String url = (String) params.get("initialUrl");
-      webView.loadUrl(url);
+      if (url.contains("://")) {
+        webView.loadUrl(url);
+      } else {
+        webView.loadUrl("file:///android_asset/flutter_assets/" + url);
+      }
     }
+  }
+
+  @Override  
+  public boolean onActivityResult(int requestCode, int resultCode, Intent intent) {
+    Log.i(TAG, "onActivityResult called with request code " + requestCode + " and result code " + resultCode);
+    if (requestCode == REQUEST_SELECT_FILE) {
+        if (uploadMessage == null)
+            return false;
+        uploadMessage.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, intent));
+        uploadMessage = null;
+        return true;
+    }
+    return false;
   }
 
   @Override
@@ -100,6 +162,9 @@ public class FlutterWebView implements PlatformView, MethodCallHandler {
     switch (methodCall.method) {
       case "loadUrl":
         loadUrl(methodCall, result);
+        break;
+      case "loadAssetFile":
+        loadAssetFile(methodCall, result);
         break;
       case "updateSettings":
         updateSettings(methodCall, result);
@@ -148,6 +213,12 @@ public class FlutterWebView implements PlatformView, MethodCallHandler {
       headers = Collections.emptyMap();
     }
     webView.loadUrl(url, headers);
+    result.success(null);
+  }
+
+  private void loadAssetFile(MethodCall methodCall, Result result) {
+    String url = (String) methodCall.arguments;
+    webView.loadUrl("file:///android_asset/flutter_assets/" + url);
     result.success(null);
   }
 

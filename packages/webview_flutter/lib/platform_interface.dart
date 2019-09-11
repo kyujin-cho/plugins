@@ -70,6 +70,11 @@ abstract class WebViewPlatformController {
         "WebView updateSettings is not implemented on the current platform");
   }
 
+  Future<void> loadAssetFile(String url) {
+    throw UnimplementedError(
+        "WebView loadAssetFile is not implemented on the current platform");
+  }
+
   /// Accessor to the current URL that the WebView is displaying.
   ///
   /// If no URL was ever loaded, returns `null`.
