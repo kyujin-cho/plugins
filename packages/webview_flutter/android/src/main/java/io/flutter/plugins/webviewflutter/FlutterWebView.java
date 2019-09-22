@@ -199,6 +199,9 @@ public class FlutterWebView implements PlatformView, MethodCallHandler, PluginRe
       case "clearCache":
         clearCache(result);
         break;
+      case "getTitle":
+        getTitle(result);
+        break;
       default:
         result.notImplemented();
     }
@@ -295,6 +298,10 @@ public class FlutterWebView implements PlatformView, MethodCallHandler, PluginRe
     webView.clearCache(true);
     WebStorage.getInstance().deleteAllData();
     result.success(null);
+  }
+
+  private void getTitle(Result result) {
+    result.success(webView.getTitle());
   }
 
   private void applySettings(Map<String, Object> settings) {
