@@ -19,6 +19,7 @@ import android.webkit.WebStorage;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.WebChromeClient;
+import io.flutter.app.FlutterApplication;
 import android.webkit.ValueCallback;
 import io.flutter.plugin.common.PluginRegistry;
 import io.flutter.plugin.common.PluginRegistry.Registrar;
@@ -60,7 +61,18 @@ public class FlutterWebView implements PlatformView, MethodCallHandler, PluginRe
         (DisplayManager) context.getSystemService(Context.DISPLAY_SERVICE);
     final Activity activity = registrar.activity();
     displayListenerProxy.onPreWebViewInitialization(displayManager);
-    webView = new InputAwareWebView(context, containerView);
+
+    Context activityContext = context;
+    Context appContext = context.getApplicationContext();
+
+    if (appContext instanceof FlutterApplication) {
+      Activity currentActivity = ((FlutterApplication) appContext).getCurrentActivity();
+      if (currentActivity != null) {
+        activityContext = currentActivity;
+      }
+    }
+
+    webView = new InputAwareWebView(activityContext, containerView);
     displayListenerProxy.onPostWebViewInitialization(displayManager);
 
     platformThreadHandler = new Handler(context.getMainLooper());
